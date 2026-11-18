@@ -88,6 +88,13 @@ export default function Plano3D() {
           javaScriptEnabled
           mediaPlaybackRequiresUserAction={false}
           onError={() => setError("No se pudo cargar la vista 3D.")}
+          // Sin esto un 403/404 del visor se ve como una pantalla negra: el
+          // WebView carga el cuerpo del error y no dispara `onError`.
+          onHttpError={(evento) =>
+            setError(
+              `El visor 3D respondió ${evento.nativeEvent.statusCode}. Revisá tu conexión y que el sitio del visor esté desplegado.`
+            )
+          }
           originWhitelist={["*"]}
           setSupportMultipleWindows={false}
           source={{ uri }}

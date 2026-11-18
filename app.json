@@ -9,7 +9,9 @@
     "userInterfaceStyle": "dark",
     "android": {
       "package": "com.dizelf.ar",
-      "permissions": ["CAMERA"],
+      "permissions": [
+        "CAMERA"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#0b1220",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -32,6 +34,17 @@
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "a9c9eb19-8d92-4d82-a69f-5e3da9c9e52b"
+      }
+    },
+    "owner": "alexsolizduran"
   }
 }

@@ -11,9 +11,13 @@ import {
 import { Redirect, router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { pedir } from "../lib/api";
+import { darDeBajaPush, registrarPush } from "../lib/push";
 import { cerrarSesion, leerSesion, type Sesion } from "../lib/sesion";
 import { C, R, S, T, sombra } from "../lib/tema";
-import type { ProyectoLista, ProyectosPaginados } from "../tipos";
+import type { MetaModeloAr, ProyectoLista, ProyectosPaginados } from "../tipos";
+
+/** Máximo de `/modelo/meta` en paralelo al completar la lista. */
+const CONSULTAS_EN_PARALELO = 4;
 
 /**
  * Proyectos que el usuario puede abrir en AR.
@@ -30,26 +34,86 @@ export default function Proyectos() {
 
   const insets = useSafeAreaInsets();
 
-  const cargar = useCallback(async (activa: Sesion) => {
-    setCargando(true);
-    try {
-      const pagina = await pedir<ProyectosPaginados>(
-        "/proyectos?limite=50",
-        { token: activa.token }
+  /**
+   * Completa `tieneModelo` cuando el backend todavía no manda el campo.
+   *
+   * Es una transición: con el backend al día la lista ya trae el dato y esto no
+   * hace ninguna petición. Se consulta con concurrencia limitada para no abrir
+   * 50 requests a la vez.
+   */
+  const completarModelos = useCallback(
+    async (activa: Sesion, datos: ProyectoLista[]) => {
+      const faltan = datos.filter((p) => p.tieneModelo === undefined);
+      if (faltan.length === 0) return;
+
+      const resultado = new Map<string, boolean>();
+      let siguiente = 0;
+
+      const trabajador = async () => {
+        while (siguiente < faltan.length) {
+          const proyecto = faltan[siguiente];
+          siguiente += 1;
+          try {
+            const meta = await pedir<MetaModeloAr>(
+              `/proyectos/${proyecto.id}/modelo/meta`,
+              { token: activa.token }
+            );
+            resultado.set(proyecto.id, meta.hay);
+          } catch {
+            // Si no se puede averiguar, se deja el acceso visible: ocultarlo
+            // por un fallo de red sería peor que un botón que da error.
+            resultado.set(proyecto.id, true);
+          }
+        }
+      };
+
+      await Promise.all(
+        Array.from(
+          { length: Math.min(CONSULTAS_EN_PARALELO, faltan.length) },
+          trabajador
+        )
       );
-      setProyectos(pagina.datos);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudieron cargar.");
-    } finally {
-      setCargando(false);
-    }
-  }, []);
+
+      setProyectos((previos) =>
+        previos.map((proyecto) => {
+          const tiene = resultado.get(proyecto.id);
+          return tiene === undefined
+            ? proyecto
+            : { ...proyecto, tieneModelo: tiene };
+        })
+      );
+    },
+    []
+  );
+
+  const cargar = useCallback(
+    async (activa: Sesion) => {
+      setCargando(true);
+      try {
+        const pagina = await pedir<ProyectosPaginados>(
+          "/proyectos?limite=50",
+          { token: activa.token }
+        );
+        setProyectos(pagina.datos);
+        setError(null);
+        void completarModelos(activa, pagina.datos);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "No se pudieron cargar.");
+      } finally {
+        setCargando(false);
+      }
+    },
+    [completarModelos]
+  );
 
   useEffect(() => {
     void leerSesion().then((activa) => {
       setSesion(activa);
-      if (activa) void cargar(activa);
+      if (activa) {
+        void cargar(activa);
+        // El token de Expo puede rotar entre arranques: se refresca la fila.
+        void registrarPush(activa.token);
+      }
     });
   }, [cargar]);
 
@@ -59,7 +123,10 @@ export default function Proyectos() {
     useCallback(() => {
       void leerSesion().then((activa) => {
         setSesion(activa);
-        if (activa) void cargar(activa);
+        if (activa) {
+          void cargar(activa);
+          void registrarPush(activa.token);
+        }
       });
     }, [cargar])
   );
@@ -94,6 +161,8 @@ export default function Proyectos() {
         <Pressable
           accessibilityRole="button"
           onPress={async () => {
+            // Best-effort: si falla la red, la sesión local se cierra igual.
+            await darDeBajaPush(sesion.token);
             await cerrarSesion();
             setSesion(null);
           }}
@@ -169,11 +238,19 @@ export default function Proyectos() {
           return (
             <Pressable
               accessibilityRole="button"
-              onPress={() =>
-                router.push({
-                  pathname: "/ar",
-                  params: { proyectoId: item.id, nombre: item.nombre },
-                })
+              accessibilityState={{ disabled: item.tieneModelo !== true }}
+              // Sin GLB publicado no hay nada que abrir: ni la fila ni los
+              // botones navegan, así no aparece un error que el usuario no
+              // puede resolver desde el teléfono.
+              disabled={item.tieneModelo !== true}
+              onPress={
+                item.tieneModelo === true
+                  ? () =>
+                      router.push({
+                        pathname: "/ar",
+                        params: { proyectoId: item.id, nombre: item.nombre },
+                      })
+                  : undefined
               }
               style={({ pressed }) => [styles.fila, pressed && styles.presionado]}
             >
@@ -212,28 +289,30 @@ export default function Proyectos() {
                 </View>
               </View>
 
-              <View style={styles.acciones}>
-                <Pressable
-                  accessibilityLabel={`Ver ${item.nombre} en 3D`}
-                  accessibilityRole="button"
-                  onPress={() =>
-                    router.push({
-                      pathname: "/plano",
-                      params: { proyectoId: item.id, nombre: item.nombre },
-                    })
-                  }
-                  style={({ pressed }) => [
-                    styles.vista3d,
-                    pressed && styles.presionado,
-                  ]}
-                >
-                  <Text style={styles.vista3dTexto}>3D</Text>
-                </Pressable>
+              {item.tieneModelo === true ? (
+                <View style={styles.acciones}>
+                  <Pressable
+                    accessibilityLabel={`Ver ${item.nombre} en 3D`}
+                    accessibilityRole="button"
+                    onPress={() =>
+                      router.push({
+                        pathname: "/plano",
+                        params: { proyectoId: item.id, nombre: item.nombre },
+                      })
+                    }
+                    style={({ pressed }) => [
+                      styles.vista3d,
+                      pressed && styles.presionado,
+                    ]}
+                  >
+                    <Text style={styles.vista3dTexto}>3D</Text>
+                  </Pressable>
 
-                <View style={styles.abrir}>
-                  <Text style={styles.abrirTexto}>Abrir</Text>
+                  <View style={styles.abrir}>
+                    <Text style={styles.abrirTexto}>AR</Text>
+                  </View>
                 </View>
-              </View>
+              ) : null}
             </Pressable>
           );
         }}

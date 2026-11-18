@@ -80,8 +80,13 @@ export async function prepararModelo(opciones: {
  * Pide la URL prefirmada sin bajar el archivo.
  *
  * `GET /modelo` responde 302 al bucket. Con `redirect: 'manual'` la URL sale del
- * header `Location`; si el runtime sigue el redirect igual, `response.url` ya
- * apunta al bucket. Cualquiera de las dos sirve; el cuerpo se descarta.
+ * header `Location`.
+ *
+ * OJO: React Native ignora `redirect: 'manual'` y sigue el redirect; ahí el
+ * `Range: bytes=0-0` es lo que evita bajar el GLB entero solo para leer la URL.
+ * Sin él, abrir la vista 3D de un modelo ya cacheado descargaba el archivo por
+ * segunda vez (y en memoria) antes de montar el WebView: pantalla en negro con
+ * el spinner para un GLB de varios MB.
  */
 async function pedirUrlFirmada(
   proyectoId: string,
@@ -90,7 +95,7 @@ async function pedirUrlFirmada(
   const destino = `${API_BASE}/proyectos/${proyectoId}/modelo`;
 
   const respuesta = await fetch(destino, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, Range: "bytes=0-0" },
     redirect: "manual",
   });
 

@@ -34,6 +34,12 @@ export interface ProyectoLista {
   miRol: string;
   totalColaboradores: number;
   puedeEditar: boolean;
+  /**
+   * `true` si el proyecto tiene un GLB publicado (los botones AR/3D existen).
+   * Opcional porque el backend desplegado puede ser anterior al campo: en ese
+   * caso la app lo completa con `/modelo/meta`.
+   */
+  tieneModelo?: boolean;
 }
 
 export interface ProyectosPaginados {

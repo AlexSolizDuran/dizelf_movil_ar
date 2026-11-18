@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { registrarPush } from "../lib/push";
 import { iniciarSesion } from "../lib/sesion";
 import { C, R, S, T, sombra } from "../lib/tema";
 
@@ -39,7 +40,10 @@ export default function Login() {
     setError(null);
     setEnviando(true);
     try {
-      await iniciarSesion(identificador.trim(), password);
+      const sesion = await iniciarSesion(identificador.trim(), password);
+      // Sin `await`: el permiso de notificaciones lo decide el usuario y no
+      // debe demorar la entrada a la app.
+      void registrarPush(sesion.token);
       router.replace("/");
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo iniciar sesión.");

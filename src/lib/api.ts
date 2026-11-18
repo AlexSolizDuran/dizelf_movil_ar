@@ -13,9 +13,19 @@ export const API_BASE = (process.env.EXPO_PUBLIC_API_URL ?? "").replace(
 );
 const BASE = API_BASE;
 
-/** URL pública del visor AR (la misma que se prueba en el navegador). */
-export const URL_AR3D =
-  process.env.EXPO_PUBLIC_AR3D_URL ?? "https://ar3d-puce.vercel.app/";
+/**
+ * URL pública del visor AR (la misma que se prueba en el navegador).
+ *
+ * Siempre termina en `/`: las pantallas le pegan rutas directamente
+ * (`plano.html`). Si la variable se configura sin la barra final —lo normal al
+ * copiar la URL desde el navegador— el resultado sería
+ * `https://hostplano.html`, un host inválido: la AR seguiría abriendo (el
+ * `?glb=` va pegado al host) pero la vista 3D se quedaría en blanco.
+ */
+const BASE_AR3D =
+  process.env.EXPO_PUBLIC_AR3D_URL ?? "https://ar3d-puce.vercel.app";
+
+export const URL_AR3D = BASE_AR3D.endsWith("/") ? BASE_AR3D : `${BASE_AR3D}/`;
 
 /** 15 s como el front: si el backend no responde, el usuario tiene que saberlo. */
 const TIMEOUT_MS = 15_000;
